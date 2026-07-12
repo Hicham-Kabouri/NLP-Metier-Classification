@@ -1,4 +1,6 @@
 # Extraction de donnée s à partir du PDF arabe
+doc_ar = pym.open("Nomenclature analytique des professions, Décembre 2014 (Version ar).pdf") # open a document
+
 # transformer le contenu du PDF en une de lignes 
 lines = []
 

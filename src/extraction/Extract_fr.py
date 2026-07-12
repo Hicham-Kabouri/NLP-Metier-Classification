@@ -1,30 +1,16 @@
-# Extraction de données à partir du PDF français
-"""
-Extraction du dataset (Code, Metier) de la NAP 2014 (version française)
-avec PyMuPDF (fitz), en utilisant la même logique que le script fourni
-pour la version arabe.
+import re
+import fitz as pym
+import pandas as pd
+from openpyxl import Workbook
+from openpyxl.styles import Font, PatternFill, Alignment
+from openpyxl.utils import get_column_letter
 
-Différence clé avec le script original (arabe) :
-Dans le PDF français, l'ordre des lignes extraites par PyMuPDF est
-CODE puis TEXTE (le code apparaît avant son libellé), et non
-TEXTE puis CODE comme supposé dans le script arabe. L'algorithme a donc
-été adapté en conséquence (on ouvre le "buffer" du texte APRES avoir vu
-le code, et on le clôture quand le code suivant apparaît).
+PDF_PATH = r"C:\Users\hp\Documents\NLP Projet\Nomenclature analytique des professions, Décembre 2014 (Version fr).pdf"
+OUT_PATH = r"C:\Users\hp\Documents\NLP Projet\NAP_2014_dataset.xlsx"
 
-Deux ajustements supplémentaires, nécessaires uniquement pour le
-français :
-1. Restriction à la section "Structure de la nomenclature" (entre
-   "GRAND GROUPE 0 :" et "ANNEXE :"), pour ignorer le sommaire et les
-   numéros de page qui ressemblent parfois à des codes.
-2. Sur quelques pages, le code et le libellé sont collés sur la même
-   ligne (ex. "261    Cadres administratifs moyens" au lieu de deux
-   lignes séparées) : un pré-traitement les sépare avant le parsing.
-"""
+doc_fr = pym.open(PDF_PATH)
 
-
-doc_fr = pym.open("Nomenclature analytique des professions, Décembre 2014 (Version fr).pdf")
-
-# transformer le contenu du PDF en une liste de lignes
+# 1) transformer le contenu du PDF en une liste de lignes
 lines = []
 for page in doc_fr:
     text = page.get_text()
@@ -33,51 +19,171 @@ for page in doc_fr:
         if l:
             lines.append(l)
 
-# limiter à la section "Structure de la nomenclature"
-start_idx = next(i for i, l in enumerate(lines) if l.strip() == 'GRAND GROUPE 0 :')
-end_idx = next(i for i, l in enumerate(lines) if i > start_idx and l.strip() == 'ANNEXE :')
+# 2) limiter à la section "Structure de la nomenclature" (avant l'annexe
+#    des définitions, qui répète du texte et perturberait le parsing)
+start_idx = next(i for i, l in enumerate(lines) if l.strip() == "GRAND GROUPE 0 :")
+end_idx = next(i for i, l in enumerate(lines) if i > start_idx and l.strip() == "ANNEXE :")
 lines = lines[start_idx:end_idx]
 
-# séparer les lignes où code et texte sont collés ("261   Cadres ...")
+# 3) pré-traitement : sur quelques pages, le code et son libellé sont collés
+#    sur la même ligne (ex. "261    Cadres administratifs moyens" au lieu de
+#    deux lignes séparées) -> on les sépare pour uniformiser le flux
 clean_lines = []
 for l in lines:
-    m = re.match(r'^(\d{1,4})\s+(\S.*)$', l)
+    m = re.match(r"^(\d{1,4})\s+(\S.*)$", l)
     if m:
         clean_lines.append(m.group(1))
         clean_lines.append(m.group(2))
     else:
         clean_lines.append(l)
 
-records = []          # résultat final [(code, métier), ...]
+# 4) parcourir les lignes et reconstituer la hiérarchie à 4 niveaux :
+#    grand groupe (1 chiffre, précédé de "GRAND GROUPE n :"),
+#    sous-grand groupe (2 chiffres), sous-groupe (3 chiffres),
+#    groupe de base = le métier (4 chiffres)
+results = []          # une entrée par code (tous niveaux confondus)
+grand_titles = {}      # {code_grand_groupe: intitulé}
+
+current_gg = None
+gg_title_parts = None
 current_code = None
 current_level = None
-buffer = []            # stocke le libellé en cours de lecture
+buffer = []
 
 
-def flush():
-    """Enregistre le métier en cours (uniquement les codes à 4 chiffres)."""
-    if current_code and current_level == 4:
-        metier = re.sub(r'\s+', ' ', " ".join(buffer)).strip()
+def flush_item():
+    if current_code is not None:
+        metier = re.sub(r"\s+", " ", " ".join(buffer)).strip()
         if metier:
-            records.append({"Code": current_code, "Metier": metier})
+            results.append({
+                "code": current_code,
+                "text": metier,
+                "level": current_level,
+                "grand_groupe": current_gg,
+            })
 
 
-for line in clean_lines:
+i = 0
+n = len(clean_lines)
+while i < n:
+    line = clean_lines[i]
+
+    m_gg = re.match(r"^GRAND GROUPE\s+(\d+)\s*:?$", line.upper())
+    if m_gg:
+        flush_item()
+        current_code, buffer = None, []
+        if current_gg is not None and gg_title_parts is not None:
+            grand_titles[current_gg] = re.sub(r"\s+", " ", " ".join(gg_title_parts)).strip()
+        current_gg = m_gg.group(1)
+        gg_title_parts = []
+        i += 1
+        # le titre du grand groupe est écrit en MAJUSCULES sur les lignes
+        # suivantes, jusqu'à ce qu'un code (2 chiffres) apparaisse
+        while i < n:
+            nxt = clean_lines[i]
+            letters = re.sub(r"[^A-Za-zÀ-ÖØ-öø-ÿ]", "", nxt)
+            if re.fullmatch(r"\d{1,4}", nxt) or (letters and not letters.isupper()):
+                break
+            gg_title_parts.append(nxt)
+            i += 1
+        continue
+
     if re.fullmatch(r"\d{1,4}", line):
-        # nouveau code (1 à 4 chiffres) -> on clôture le métier précédent
-        flush()
+        flush_item()
         current_code = line
         current_level = len(line)
         buffer = []
-    else:
-        buffer.append(line)
-flush()  # dernier enregistrement de la boucle
+        i += 1
+        continue
 
-tableau_fr = pd.DataFrame(records)
+    buffer.append(line)
+    i += 1
 
-tableau_fr.drop_duplicates(subset="Code", inplace=True)
-tableau_fr.reset_index(drop=True, inplace=True)
+flush_item()
+if current_gg is not None and gg_title_parts is not None:
+    grand_titles[current_gg] = re.sub(r"\s+", " ", " ".join(gg_title_parts)).strip()
 
-tableau_fr.to_excel("NAP_2014_vr_fr_01.xlsx", index=False)
+# supprimer les doublons de code (le PDF officiel contient une coquille :
+# le code 1939 est imprimé deux fois avec deux intitulés différents)
+seen = set()
+dedup_results = []
+for r in results:
+    if r["code"] not in seen:
+        seen.add(r["code"])
+        dedup_results.append(r)
+results = dedup_results
 
-print("Nombre de métiers :", len(tableau_fr))
+by_code = {r["code"]: r for r in results}
+
+
+def parents(code):
+    return code[0], (code[:2] if len(code) >= 2 else None), (code[:3] if len(code) >= 3 else None)
+
+
+# 5) construire le fichier Excel (4 feuilles)
+wb = Workbook()
+ws = wb.active
+ws.title = "NAP_2014_vr_fr"
+ws.append(["Code", "Metier", "Code_Sous_Groupe", "Intitule_Sous_Groupe",
+           "Code_Sous_Grand_Groupe", "Intitule_Sous_Grand_Groupe",
+           "Code_Grand_Groupe", "Intitule_Grand_Groupe"])
+for cell in ws[1]:
+    cell.font = Font(bold=True, color="FFFFFF", name="Arial")
+    cell.fill = PatternFill("solid", start_color="4472C4")
+    cell.alignment = Alignment(horizontal="center", vertical="center")
+
+for item in sorted((x for x in results if x["level"] == 4), key=lambda x: x["code"]):
+    code = item["code"]
+    p1, p2, p3 = parents(code)
+    ws.append([
+        code, item["text"],
+        p3, by_code.get(p3, {}).get("text", ""),
+        p2, by_code.get(p2, {}).get("text", ""),
+        p1, grand_titles.get(p1, ""),
+    ])
+for i, w in enumerate([10, 60, 14, 40, 14, 45, 12, 55], 1):
+    ws.column_dimensions[get_column_letter(i)].width = w
+for row in ws.iter_rows(min_row=2):
+    for cell in row:
+        cell.font = Font(name="Arial", size=10)
+ws.freeze_panes = "A2"
+
+ws2 = wb.create_sheet("Sous_Groupes")
+ws2.append(["Code", "Intitule", "Code_Sous_Grand_Groupe", "Code_Grand_Groupe", "Intitule_Grand_Groupe"])
+for cell in ws2[1]:
+    cell.font = Font(bold=True, color="FFFFFF", name="Arial")
+    cell.fill = PatternFill("solid", start_color="4472C4")
+for item in sorted((x for x in results if x["level"] == 3), key=lambda x: x["code"]):
+    code = item["code"]
+    p1, p2, _ = parents(code)
+    ws2.append([code, item["text"], p2, p1, grand_titles.get(p1, "")])
+for i, w in enumerate([10, 60, 16, 12, 55], 1):
+    ws2.column_dimensions[get_column_letter(i)].width = w
+
+ws3 = wb.create_sheet("Sous_Grands_Groupes")
+ws3.append(["Code", "Intitule", "Code_Grand_Groupe", "Intitule_Grand_Groupe"])
+for cell in ws3[1]:
+    cell.font = Font(bold=True, color="FFFFFF", name="Arial")
+    cell.fill = PatternFill("solid", start_color="4472C4")
+for item in sorted((x for x in results if x["level"] == 2), key=lambda x: x["code"]):
+    code = item["code"]
+    ws3.append([code, item["text"], code[0], grand_titles.get(code[0], "")])
+for i, w in enumerate([10, 60, 12, 55], 1):
+    ws3.column_dimensions[get_column_letter(i)].width = w
+
+ws4 = wb.create_sheet("Grands_Groupes")
+ws4.append(["Code", "Intitule"])
+for cell in ws4[1]:
+    cell.font = Font(bold=True, color="FFFFFF", name="Arial")
+    cell.fill = PatternFill("solid", start_color="4472C4")
+for code in sorted(grand_titles):
+    ws4.append([code, grand_titles[code]])
+ws4.column_dimensions["A"].width = 10
+ws4.column_dimensions["B"].width = 90
+
+wb.save(OUT_PATH)
+
+print("Groupes de base (métiers) :", sum(1 for x in results if x["level"] == 4))
+print("Sous-groupes               :", sum(1 for x in results if x["level"] == 3))
+print("Sous-grands groupes        :", sum(1 for x in results if x["level"] == 2))
+print("Grands groupes             :", len(grand_titles))

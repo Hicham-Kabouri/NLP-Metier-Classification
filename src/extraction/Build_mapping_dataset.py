@@ -1,3 +1,5 @@
+# Construction de data mapping
+data_set = pd.read_excel("NAP_2014_vr_fr.xlsx")
 # construction de data mapping  merging tableau_fr avec data_set par code 
 merge = data_set[["Code", "Intitule_Sous_Groupe", "Intitule_Sous_Grand_Groupe", "Intitule_Grand_Groupe"]]
 # Fusion 
