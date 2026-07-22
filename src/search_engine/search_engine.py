@@ -1,4 +1,7 @@
 
+import re
+import pandas as pd
+import numpy as np
 # Prétraitement du texte
 def nettoyer_texte(texte):
     """
