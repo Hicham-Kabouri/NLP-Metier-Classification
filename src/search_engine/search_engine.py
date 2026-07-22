@@ -61,7 +61,7 @@ def rechercher_metier(
     data_mapping,
     top_k=20,
     top_n=5,
-    seuil=0.50,
+    seuil=0.75,
 ):
     """
     Recherche les codes NAP les plus proches d'une profession.
