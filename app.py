@@ -1,11 +1,10 @@
 import streamlit as st
-import re 
 import numpy as np
 import pandas as pd
 from sentence_transformers import SentenceTransformer
 from src.search_engine.search_engine import rechercher_metier
 
-st.set_page_config(page_title="Recherche de codes métiers (NAP)", layout="wide")
+st.set_page_config(page_title="Recherche de codes Proffession (NAP)", layout="wide")
 
 # --- Chargement (une seule fois, mis en cache) ---
 
@@ -15,9 +14,9 @@ def load_model():
 
 @st.cache_resource
 def load_data():
-    embeddings = np.load("src/embedding/corpus_embeddings.npy")
-    reference_corpus_final = pd.read_csv("src/embedding/reference_corpus_final.csv")
-    data_mapping = pd.read_csv("src/embedding/data_mapping.csv")
+    embeddings = np.load("data/processed/embeddings.npy")
+    reference_corpus_final = pd.read_excel("data/processed/reference_corpus_final.xlsx")
+    data_mapping = pd.read_excel("data/processed/data_mapping.xlsx")
     return embeddings, reference_corpus_final, data_mapping
 
 model = load_model()
@@ -25,7 +24,7 @@ embeddings, reference_corpus_final, data_mapping = load_data()
 
 # --- Interface ---
 
-st.title("🔎 Recherche de codes métiers (NAP)")
+st.title("🔎 Recherche de codes professions (NAP)")
 st.write("Entrez une profession en français ou en arabe pour trouver les codes les plus proches.")
 
 requete = st.text_input("Profession recherchée :")
@@ -42,8 +41,9 @@ if requete:
 
     if resultats.empty:
         st.warning(
-            "Aucun résultat trouvé. Cette requête ne semble pas correspondre "
-            "à une profession du référentiel NAP. Essayez de reformuler."
+            "Aucune profession suffisamment proche n'a été trouvée. "
+            "Cette requête ne semble correspondre à aucune profession "
+            "du référentiel NAP. Essayez de reformuler votre recherche."
         )
     else:
         st.subheader(f"Top {len(resultats)} résultats")
@@ -53,8 +53,8 @@ if requete:
                 col1, col2 = st.columns([3, 1])
                 with col1:
                     st.markdown(f"**Code :** {row['Code']}")
-                    st.markdown(f"**Métier (FR) :** {row['metier_fr']}")
-                    st.markdown(f"**Métier (AR) :** {row['metier_ar']}")
+                    st.markdown(f"**Profession (FR) :** {row['metier_fr']}")
+                    st.markdown(f"**Profession (AR) :** {row['metier_ar']}")
                     st.caption(
                         f"{row['Intitule_Sous_Groupe']} → "
                         f"{row['Intitule_Sous_Grand_Groupe']} → "
