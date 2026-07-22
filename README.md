@@ -1,6 +1,6 @@
 # Classification Sémantique de Métiers (NAP)
 
-Outil de recherche sémantique permettant d'associer une profession, saisie en langage libre (français ou arabe), aux codes de la **Nomenclature Analytique des Professions (NAP)**. Le projet a été réalisé dans le cadre d'un stage au **Haut-Commissariat au Plan (HCP) — Direction Régionale Agdal**.
+Outil de recherche sémantique permettant d'associer une profession, saisie en langage libre (français ou arabe), aux codes de la **Nomenclature Analytique des Professions (NAP)**. Le projet a été réalisé dans le cadre d'un stage au **Haut-Commissariat au Plan (HCP) — Direction des systèmes d'informations statistiques**.
 
 **Démo en ligne :** [https://nlp-metier-classification-aedasudzs46qdvjvvvack2.streamlit.app/](https://nlp-metier-classification-aedasudzs46qdvjvvvack2.streamlit.app/)
 
@@ -96,4 +96,4 @@ Les données de référence utilisées (nomenclature NAP 2014) proviennent du Ha
 ## Auteur
 
 **Hicham Kabouri**
-Projet réalisé dans le cadre d'un stage au Haut-Commissariat au Plan (HCP) — Direction Régionale Agdal
+Projet réalisé dans le cadre d'un stage au Haut-Commissariat au Plan (HCP) — Direction des systèmes d'informations statistiques
